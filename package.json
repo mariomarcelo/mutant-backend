@@ -1,0 +1,25 @@
+{
+  "name": "mutant-backend",
+  "version": "1.0.0",
+  "description": "Backend para MUTANT v1 - Deploy y OTA Updates",
+  "main": "api/index.js",
+  "scripts": {
+    "dev": "ts-node api/index.ts",
+    "build": "tsc",
+    "start": "node dist/api/index.js"
+  },
+  "dependencies": {
+    "@octokit/rest": "^21.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "tweetsodium": "^0.0.5"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.9.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3"
+  }
+}
