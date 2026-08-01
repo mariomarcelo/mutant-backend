@@ -41,7 +41,7 @@ app.get('/', (_req: Request, res: Response) => {
   });
 });
 
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ status: 'healthy', timestamp: Date.now() });
 });
 
@@ -57,11 +57,7 @@ function encryptSecret(publicKey: string, secretValue: string): string {
 function augmentProjectForOTA(files: ProjectFile[], slug: string): ProjectFile[] {
   const augmented = [...files];
 
-  // Buscar y actualizar app.json / app.config
   const appJsonIdx = augmented.findIndex((f) => f.path === 'app.json');
-  const appConfigIdx = augmented.findIndex(
-    (f) => f.path === 'app.config.js' || f.path === 'app.config.ts'
-  );
 
   if (appJsonIdx !== -1) {
     try {
@@ -76,7 +72,6 @@ function augmentProjectForOTA(files: ProjectFile[], slug: string): ProjectFile[]
         fallbackToCacheTimeout: 0,
       };
 
-      // Habilitar plugin de expo-updates
       if (!config.expo.plugins) config.expo.plugins = [];
       if (!config.expo.plugins.includes('expo-updates')) {
         config.expo.plugins.push('expo-updates');
@@ -88,7 +83,6 @@ function augmentProjectForOTA(files: ProjectFile[], slug: string): ProjectFile[]
     }
   }
 
-  // Asegurarse que package.json tenga expo-updates
   const pkgIdx = augmented.findIndex((f) => f.path === 'package.json');
   if (pkgIdx !== -1) {
     try {
@@ -104,7 +98,7 @@ function augmentProjectForOTA(files: ProjectFile[], slug: string): ProjectFile[]
   return augmented;
 }
 
-// ---------- HELPER: crea workflow de GitHub Actions ----------
+// ---------- HELPER: workflow ----------
 function getWorkflowContent(): string {
   return `name: EAS Build APK
 
@@ -117,27 +111,27 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: 🏗 Checkout
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 🏗 Setup Node
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: 🏗 Setup EAS
+      - name: Setup EAS
         uses: expo/expo-github-action@v8
         with:
           eas-version: latest
           token: \${{ secrets.EXPO_TOKEN }}
 
-      - name: 📦 Install dependencies
+      - name: Install dependencies
         run: npm install --legacy-peer-deps
 
-      - name: 🚀 Build APK on EAS
+      - name: Build APK on EAS
         run: eas build --platform android --profile preview --non-interactive --no-wait
 
-      - name: ✅ Done
+      - name: Done
         run: echo "Build enviado a EAS. Ver progreso en https://expo.dev"
 `;
 }
@@ -175,7 +169,6 @@ app.post('/api/deploy', async (req: Request, res: Response) => {
     expoUsername,
   } = req.body as DeployRequest;
 
-  // Validaciones
   const missing: string[] = [];
   if (!projectSlug) missing.push('projectSlug');
   if (!files || !Array.isArray(files) || files.length === 0) missing.push('files');
@@ -199,19 +192,21 @@ app.post('/api/deploy', async (req: Request, res: Response) => {
   };
 
   try {
-    log(`🧬 MUTANT Deploy iniciado: ${projectName}`);
-    log(`👤 GitHub: ${githubUsername}`);
-    log(`👤 Expo: ${expoUsername}`);
+    log(`MUTANT Deploy iniciado: ${projectName}`);
+    log(`GitHub: ${githubUsername}`);
+    log(`Expo: ${expoUsername}`);
 
     const octokit = new Octokit({ auth: githubToken });
-    const repoName = `mutant-${projectSlug}`.substring(0, 90).toLowerCase().replace(/[^a-z0-9-]/g, '-');
+    const repoName = `mutant-${projectSlug}`
+      .substring(0, 90)
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, '-');
 
     // ---- 1. Crear repo ----
     let repoUrl = '';
-    let repoExists = false;
 
     try {
-      log(`📦 Creando repositorio: ${repoName}`);
+      log(`Creando repositorio: ${repoName}`);
       const { data: repo } = await octokit.repos.createForAuthenticatedUser({
         name: repoName,
         description: `MUTANT v1 → ${projectName}`,
@@ -219,21 +214,19 @@ app.post('/api/deploy', async (req: Request, res: Response) => {
         auto_init: true,
       });
       repoUrl = repo.html_url;
-      log(`✅ Repo creado: ${repoUrl}`);
-      // Esperamos un momento a que GitHub inicialice el repo
+      log(`Repo creado: ${repoUrl}`);
       await new Promise((r) => setTimeout(r, 2000));
     } catch (e: any) {
       if (e.status === 422) {
-        log(`ℹ️ Repo ya existe, se actualizará`);
-        repoExists = true;
+        log(`Repo ya existe, se actualizará`);
         repoUrl = `https://github.com/${githubUsername}/${repoName}`;
       } else {
         throw new Error(`Error creando repo: ${e.message}`);
       }
     }
 
-    // ---- 2. Configurar secret EXPO_TOKEN ----
-    log(`🔑 Configurando secret EXPO_TOKEN...`);
+    // ---- 2. Secret EXPO_TOKEN ----
+    log(`Configurando secret EXPO_TOKEN...`);
     try {
       const { data: publicKey } = await octokit.actions.getRepoPublicKey({
         owner: githubUsername,
@@ -250,13 +243,13 @@ app.post('/api/deploy', async (req: Request, res: Response) => {
         key_id: publicKey.key_id,
       });
 
-      log(`✅ Secret EXPO_TOKEN configurado`);
+      log(`Secret EXPO_TOKEN configurado`);
     } catch (e: any) {
-      log(`⚠️ Error configurando secret: ${e.message}`);
-      log(`ℹ️ Puedes agregarlo manualmente en: ${repoUrl}/settings/secrets/actions`);
+      log(`Error configurando secret: ${e.message}`);
+      log(`Puedes agregarlo manualmente en: ${repoUrl}/settings/secrets/actions`);
     }
 
-    // ---- 3. Preparar todos los archivos con OTA ----
+    // ---- 3. Preparar archivos ----
     const augmentedFiles = augmentProjectForOTA(files, projectSlug);
 
     const allFiles: ProjectFile[] = [
@@ -265,41 +258,16 @@ app.post('/api/deploy', async (req: Request, res: Response) => {
       { path: 'eas.json', content: getEasJson() },
       {
         path: 'README.md',
-        content: `# ${projectName}
-
-Generado por **MUTANT v1** 🧬
-
-## Build en progreso
-1. Ve a la pestaña [Actions](${repoUrl}/actions) de este repo
-2. Espera a que termine (~10-15 min)
-3. El APK estará en tu [dashboard de Expo](https://expo.dev/accounts/${expoUsername}/projects)
-
-## Actualizaciones OTA
-Este proyecto tiene \`expo-updates\` habilitado.  
-Cualquier cambio se puede desplegar sin recompilar usando:
-\`\`\`bash
-eas update --branch production --message "Update"
-\`\`\`
-`,
+        content: `# ${projectName}\n\nGenerado por MUTANT v1\n\n## Build\nVer progreso en: ${repoUrl}/actions\n\n## APK\nDashboard: https://expo.dev/accounts/${expoUsername}/projects\n`,
       },
       {
         path: '.gitignore',
-        content: `node_modules/
-.expo/
-dist/
-web-build/
-*.log
-.env
-.env.local
-.DS_Store
-android/
-ios/
-*.orig.*`,
+        content: `node_modules/\n.expo/\ndist/\nweb-build/\n*.log\n.env\n.env.local\n.DS_Store\nandroid/\nios/\n`,
       },
     ];
 
     // ---- 4. Subir archivos ----
-    log(`📤 Subiendo ${allFiles.length} archivos...`);
+    log(`Subiendo ${allFiles.length} archivos...`);
 
     let uploaded = 0;
     let errors = 0;
@@ -308,7 +276,6 @@ ios/
       try {
         const contentBase64 = Buffer.from(file.content).toString('base64');
 
-        // Ver si el archivo ya existe
         let sha: string | undefined;
         try {
           const { data: existing } = await octokit.repos.getContent({
@@ -317,9 +284,7 @@ ios/
             path: file.path,
           });
           if ('sha' in existing) sha = existing.sha;
-        } catch {
-          // No existe, se creará nuevo
-        }
+        } catch {}
 
         await octokit.repos.createOrUpdateFileContents({
           owner: githubUsername,
@@ -333,13 +298,13 @@ ios/
         uploaded++;
       } catch (e: any) {
         errors++;
-        log(`⚠️ Error en ${file.path}: ${e.message}`);
+        log(`Error en ${file.path}: ${e.message}`);
       }
     }
 
-    log(`✅ Subidos: ${uploaded}/${allFiles.length} (errores: ${errors})`);
+    log(`Subidos: ${uploaded}/${allFiles.length} (errores: ${errors})`);
 
-    // ---- 5. Disparar workflow manualmente por si el push no lo activa ----
+    // ---- 5. Disparar workflow ----
     try {
       await new Promise((r) => setTimeout(r, 2000));
       await octokit.actions.createWorkflowDispatch({
@@ -348,12 +313,11 @@ ios/
         workflow_id: 'build.yml',
         ref: 'main',
       });
-      log(`🚀 Workflow disparado manualmente`);
+      log(`Workflow disparado manualmente`);
     } catch (e: any) {
-      log(`ℹ️ Workflow se activará con el push (${e.message})`);
+      log(`Workflow se activará con el push (${e.message})`);
     }
 
-    // ---- 6. Response ----
     return res.json({
       success: true,
       projectName,
@@ -376,7 +340,7 @@ ios/
       logs,
     });
   } catch (error: any) {
-    log(`❌ ERROR: ${error.message}`);
+    log(`ERROR: ${error.message}`);
     return res.status(500).json({
       error: error.message,
       logs,
@@ -384,7 +348,7 @@ ios/
   }
 });
 
-// ---------- STATUS ENDPOINT ----------
+// ---------- STATUS ----------
 app.get('/api/status/:owner/:repo', async (req: Request, res: Response) => {
   const owner = String(req.params.owner);
   const repo = String(req.params.repo);
@@ -417,12 +381,13 @@ app.get('/api/status/:owner/:repo', async (req: Request, res: Response) => {
   }
 });
 
-// ---------- LOCAL ----------
+// ---------- LOCAL DEV ----------
 const port = process.env.PORT || 3000;
-if (require.main === module) {
+
+if (require.main === module && !process.env.VERCEL) {
   app.listen(port, () => {
-    console.log(`\n🧬 MUTANT Backend v1.0.0`);
-    console.log(`🌐 http://localhost:${port}`);
+    console.log(`\nMUTANT Backend v1.0.0`);
+    console.log(`http://localhost:${port}`);
     console.log(`\nEndpoints:`);
     console.log(`  GET  /`);
     console.log(`  POST /api/deploy`);
@@ -430,4 +395,5 @@ if (require.main === module) {
   });
 }
 
+// ---------- VERCEL SERVERLESS EXPORT ----------
 export default app;
